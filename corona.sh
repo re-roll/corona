@@ -1,11 +1,16 @@
 #!/bin/sh
 
+#----------------------Initializing of variables----------------------
+
 isFilename=0
-commands=()
+filename=()
+k=0
 flagA=0
 flagB=0
 flagS=0
 flagG=0
+
+#----------------------Help function----------------------
 
 helpF()
 {
@@ -13,38 +18,47 @@ helpF()
     exit 1
 }
 
-while getopts ":a:b:g:s:h" flag
+#----------------------Get arguments after filters----------------------
+
+while getopts "a:b:g:s:h" flag
 do
    case "$flag" in
       a ) flagA="$OPTARG" ;;
       b ) flagB="$OPTARG" ;;
       g ) flagG="$OPTARG" ;;
       s ) flagS="$OPTARG" ;;
-      h ) helpF
-         exit 0;;
+      h ) helpF;;
    esac
 done
 
-while [ ! -z $1 ]
+#----------------------Get commands and filename----------------------
+
+while [ -n "$1" ]
 do
-    if [[ $1 == *.txt ]]; 
-    then
-        filename=$1
-        isFilename=1
-    elif [[ $1 != -* ]] && [[ $1 != -h ]] && [[ $1 != $flagA ]] && [[ $1 != $flagB ]] && [[ $1 != $flagG ]] && [[ $1 != $flagS ]];
+    if [[ $1 == *.csv ]]; 
     then
         ((k=k+1))
-        commands[k]=$1
+        filename[k]=$1
+        isFilename=1
     fi
+    case "$1" in
+    infected) isInfected=1;;
+    merge) isMerge=1;;
+    gender) isGender=1;;
+    age) isAge=1;;
+    daily) isDaily=1;;
+    monthly) isMonthly=1;;
+    yearly) isYearly=1;;
+    countries) isCountries=1;;
+    districts) isDistricts=1;;
+    regions) isRegions=1;;
+    esac
     shift
 done
 
-if [[ $isFilename == 1 ]]; then
-    echo "Filename is: $filename"
-fi
+# Delete it later
 
-echo "Commands are: ${commands[@]}"
-echo "Flag -a is $flagA"
-echo "Flag -b is $flagB"
-echo "Flag -s is $flagS"
-echo "Flag -g is $flagG"
+if [[ $isFilename == 1 ]]
+then
+    echo "${filename[@]}"
+fi
