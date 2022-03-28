@@ -69,7 +69,7 @@ done
 
 if [[ $k == 0 ]] && [[ $flags == 0 ]]
 then
-    cat
+    cat 
 elif [[ $k == 1 ]] && [[ $flags == 0 ]]
 then
     cat ${filename[1]}
@@ -115,6 +115,7 @@ then
                 count++
             }
         }\
+
         END { print "M:", countm} \
         END { print "Z:", countz} \
         END { if (count > 0) {print "None:", count}} \
@@ -198,7 +199,7 @@ then
                 count++
             }
             else if ( ((!($3 ~ /^[0-9]+$/)) && (!($3 == "vek"))) || ($3 < 0) ){
-                print "Invalid token age in : "
+                print "Invalid age: "
                 print
             }
         } \
@@ -217,4 +218,31 @@ then
         END { if (count > 0) {print "None  :", count}} \
         ' ${filename[1]})
     echo "$out"
+fi
+
+# [daily]
+    
+if [[ $isDaily == 1 ]]
+then
+        lastday=0
+    cnt=0
+    while IFS="," read -r a b c
+    do
+        year=${b:0:4}
+        month=${b:5:2}
+        day=${b:8:2}
+        if [[ $day != $lastday ]]
+        then
+            datum=("$year-$month-$day")
+            out=$(awk -F, -v f1="$datum"\
+            '{
+                if ($2 == f1) {
+                    count++
+                }
+            }\
+            END {print count}' ${filename[1]})
+            echo "$year-$month-$day: $out"
+        fi
+        lastday=$day
+    done < <(tail -n +2 ${filename[1]})
 fi
