@@ -30,7 +30,7 @@ isB=0
 isS=0
 isG=0
 
-#----------------------Functions---------------------------------------#
+#----------------------Help function-----------------------------------#
 
 helpF()
 {
@@ -73,14 +73,16 @@ do
         filename[k]=$1
     elif [[ $1 == *.gz ]]
     then
-        gunzip $1
+        isGZ=1
+        file=$1
         ((k=k+1))
         filename[k]=${1:0:15}
     elif [[ $1 == *.bz2 ]]
     then
+        file=$1
+        isBZ2=1 
         ((k=k+1))
         filename[k]=${1:0:15}
-        bzip2 -dk $1
     fi
     case "$1" in
     infected) isInfected=1;((flags=flags+1));;
@@ -102,6 +104,44 @@ do
     shift
 done
 
+#---------------------------ERRORS--------------------------------------#
+
+warning_out=$(awk -F, \
+    '{
+        if ( ((!($3 ~ /^[0-9]+$/)) && (!($3 == "vek"))) || ($3 < 0) ){
+                printf "Invalid age: "
+                print
+        }
+        year=substr($2,1,4)
+        month=substr($2,6,2)
+        day=substr($2,9,2)
+        if  ((!(year ~ /^([0-9]+)$/)) && ($2 != "datum")){
+                printf "Invalid date: "
+                print 
+        }
+        else if  ((!(month ~ /^([0-9]+)$/)) && ($2 != "datum")){
+                printf "Invalid date: "
+                print 
+        }
+        else if  ((!(day ~ /^([0-9]+)$/)) && ($2 != "datum")){
+                printf "Invalid date: "
+                print 
+        }
+        else if ((day > 31) && ($2 != "datum")) {
+            printf "Invalid date: "
+            print 
+        }
+        else if ((month > 12) && ($2 != "datum")) {
+            printf "Invalid date: "
+            print
+        }
+    }\
+    ' ${filename[1]})
+if [[ $warning_out != "" ]]
+then
+    echo "$warning_out"
+fi
+
 #----------------------Work with filters--------------------------------#
 
 # [-g]
@@ -110,7 +150,7 @@ if [[ $isG == 1 ]] && [[ $flagG == "M" ]]
 then
         outG=$(awk -F, \
             '{
-                if ($4 == "M") {
+                if (($4 == "M") || ($4 == "pohlavi")) {
                     print
                 }
             }\
@@ -119,7 +159,7 @@ elif [[ $isG == 1 ]] && [[ $flagG == "Z" ]]
 then
     outG=$(awk -F, \
             '{
-                if ($4 == "Z") {
+                if (($4 == "Z") || ($4 == "pohlavi")) {
                     print
                 }
             }\
@@ -147,7 +187,7 @@ then
     filter1=$flagB
     outB=$(awk -F, -v f1="$filter1" \
             '{
-                if ($2 <= f1) {
+                if (($2 <= f1) || ($2 == "datum")) {
                     print
                 }
             }\
@@ -165,6 +205,7 @@ then
     cat ${filename[1]}
     exit
 fi
+
 if [[ $k == 0 ]] && [[ $opts == 1 ]] && [[ $flags == 0 ]]
 then
     if [[ $isG == 1 ]]
@@ -193,6 +234,14 @@ then
     exit
 fi
 
+if [[ isGZ == 1 ]]
+then
+    gunzip -d -c $1
+elif [[ isBZ2 == 1 ]]
+then
+    bzip2 -d -c $1
+fi
+
 #----------------------Work with commands-------------------------------#
 
 # [infected]
@@ -200,15 +249,17 @@ fi
 if [[ $isInfected == 1 ]] && [[ $isG == 1 ]]
 then
     cntLn=($(wc -l <<< "${outG}"))
+    ((cntLn=cntLn-1))
     echo $cntLn
 elif [[ $isInfected == 1 ]] && [[ $isA == 1 ]]
 then
     cntLn=($(wc -l <<< "${outA}"))
-    ((cntLn=cntLn-1)) # 'after' means that the last string will be in the $outA and we don't need it
+    ((cntLn=cntLn-1))
     echo $cntLn
 elif [[ $isInfected == 1 ]] && [[ $isB == 1 ]]
 then
     cntLn=($(wc -l <<< "${outB}"))
+    ((cntLn=cntLn-1))
     echo $cntLn
 fi
 
@@ -396,10 +447,6 @@ then
             if ($3 == ""){
                 count++
             }
-            else if ( ((!($3 ~ /^[0-9]+$/)) && (!($3 == "vek"))) || ($3 < 0) ){
-                print "Invalid age: "
-                print
-            }
         } \
         END { print "0-5   :", count1} \
         END { print "6-15  :", count2} \
@@ -473,10 +520,6 @@ then
             if ($3 == ""){
                 count++
             }
-            else if ( ((!($3 ~ /^[0-9]+$/)) && (!($3 == "vek"))) || ($3 < 0) ){
-                print "Invalid age: "
-                print
-            }
         } \
         END { print "0-5   :", count1} \
         END { print "6-15  :", count2} \
@@ -548,10 +591,6 @@ then
             }
             if ($3 == ""){
                 count++
-            }
-            else if ( ((!($3 ~ /^[0-9]+$/)) && (!($3 == "vek"))) || ($3 < 0) ){
-                print "Invalid age: "
-                print
             }
         } \
         END { print "0-5   :", count1} \
@@ -625,10 +664,6 @@ then
             if ($3 == ""){
                 count++
             }
-            else if ( ((!($3 ~ /^[0-9]+$/)) && (!($3 == "vek"))) || ($3 < 0) ){
-                print "Invalid age: "
-                print
-            }
         } \
         END { print "0-5   :", count1} \
         END { print "6-15  :", count2} \
@@ -649,113 +684,193 @@ fi
 
 # [daily]
     
-if [[ $isDaily == 1 ]] && [[ $k == 1 ]] && [[ $opts == 0 ]]
+if [[ $isDaily == 1 ]] && [[ $opts == 0 ]]
 then
-    out=$(awk -F, '{ if ($2 != "datum") {A[$2]++}}END{for(i in A)print i":",A[i]}' ${filename[1]} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[$2]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        ${filename[1]} | sort -M)
     echo "$out"
-elif [[ $isDaily == 1 ]] && [[ $k == 1 ]] && [[ $isA == 1 ]]
+elif [[ $isDaily == 1 ]] && [[ $isA == 1 ]]
 then
-    out=$(awk -F, '{ if ($2 != "datum") {A[$2]++}}END{for(i in A)print i":",A[i]}' <<< ${outA} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[$2]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outA | sort -M)
     echo "$out"
-elif [[ $isDaily == 1 ]] && [[ $k == 1 ]] && [[ $isB == 1 ]]
+elif [[ $isDaily == 1 ]] && [[ $isB == 1 ]]
 then
-    out=$(awk -F, '{ if ($2 != "datum") {A[$2]++}}END{for(i in A)print i":",A[i]}' <<< ${outB} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[$2]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outB | sort -M)
     echo "$out"
-elif [[ $isDaily == 1 ]] && [[ $k == 1 ]] && [[ $isG == 1 ]]
+elif [[ $isDaily == 1 ]] && [[ $isG == 1 ]]
 then
-    out=$(awk -F, '{ if ($2 != "datum") {A[$2]++}}END{for(i in A)print i":",A[i]}' <<< ${outG} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[$2]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outG | sort -M)
     echo "$out"
 fi
 
 # [monthly]
 
-
+if [[ $isMonthly == 1 ]] && [[ $opts == 0 ]]
+then
+    out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,7)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        ${filename[1]} | sort -M)
+    echo "$out"
+elif [[ $isMonthly == 1 ]] && [[ $isA == 1 ]]
+then
+    out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,7)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outA | sort -M)
+    echo "$out"
+elif [[ $isMonthly == 1 ]] && [[ $isB == 1 ]]
+then
+   out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,7)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outB | sort -M)
+    echo "$out"
+elif [[ $isMonthly == 1 ]] && [[ $isG == 1 ]]
+then
+    out=$(awk -F, \
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,7)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outG | sort -M)
+    echo "$out"
+fi
 
 # [yearly]
 
 if [[ $isYearly == 1 ]] && [[ $opts == 0 ]]
 then
     out=$(awk -F, \
-            '{
-                if (($2 >= "2020-01-01")  && ($2 <= "2020-12-31")) {
-                    count0++
-                    is0=1
-                }
-                if (($2 >= "2021-01-01")  && ($2 <= "2021-12-31")) {
-                    count1++
-                    is1=1
-                }
-                if (($2 >= "2022-01-01")  && ($2 <= "2022-12-31")) {
-                    count2++
-                    is2=1
-                }
-            }\
-            END {if (is0 == 1) {print "2020:" count0}} \
-            END {if (is1 == 1) {print "2021:" count1}} \
-            END {if (is2 == 1) {print "2022:" count2}}' ${filename[1]})
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,4)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        ${filename[1]})
     echo "$out"
 elif [[ $isYearly == 1 ]] && [[ $isA == 1 ]]
 then
     out=$(awk -F, \
-            '{
-                if (($2 >= "2020-01-01")  && ($2 <= "2020-12-31")) {
-                    count0++
-                    is0=1
-                }
-                if (($2 >= "2021-01-01")  && ($2 <= "2021-12-31")) {
-                    count1++
-                    is1=1
-                }
-                if (($2 >= "2022-01-01")  && ($2 <= "2022-12-31")) {
-                    count2++
-                    is2=1
-                }
-            }\
-            END {if (is0 == 1) {print "2020:" count0}} \
-            END {if (is1 == 1) {print "2021:" count1}} \
-            END {if (is2 == 1) {print "2022:" count2}}' <<< $outA)
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,4)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outA)
     echo "$out"
 elif [[ $isYearly == 1 ]] && [[ $isB == 1 ]]
 then
     out=$(awk -F, \
-            '{
-                if (($2 >= "2020-01-01")  && ($2 <= "2020-12-31")) {
-                    count0++
-                    is0=1
-                }
-                if (($2 >= "2021-01-01")  && ($2 <= "2021-12-31")) {
-                    count1++
-                    is1=1
-                }
-                if (($2 >= "2022-01-01")  && ($2 <= "2022-12-31")) {
-                    count2++
-                    is2=1
-                }
-            }\
-            END {if (is0 == 1) {print "2020:" count0}} \
-            END {if (is1 == 1) {print "2021:" count1}} \
-            END {if (is2 == 1) {print "2022:" count2}}' <<< $outB)
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,4)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outB)
     echo "$out"
 elif [[ $isYearly == 1 ]] && [[ $isG == 1 ]]
 then
     out=$(awk -F, \
-            '{
-                if (($2 >= "2020-01-01")  && ($2 <= "2020-12-31")) {
-                    count0++
-                    is0=1
-                }
-                if (($2 >= "2021-01-01")  && ($2 <= "2021-12-31")) {
-                    count1++
-                    is1=1
-                }
-                if (($2 >= "2022-01-01")  && ($2 <= "2022-12-31")) {
-                    count2++
-                    is2=1
-                }
-            }\
-            END {if (is0 == 1) {print "2020:" count0}} \
-            END {if (is1 == 1) {print "2021:" count1}} \
-            END {if (is2 == 1) {print "2022:" count2}}' <<< $outG)
+        '{ \
+            if (($2 != "datum") && ($2 != "")) {
+                A[substr($2,1,4)]++
+            }
+            if ($2 == "") {
+                count++
+            }
+        }\
+        END{for(i in A)print i":",A[i]} \
+        END{ if (count > 0) {print "None:", count}}' \
+        <<< $outG)
     echo "$out"
 fi
 
@@ -763,19 +878,47 @@ fi
 
 if [[ $isCountries == 1 ]] && [[ $opts == 0 ]]
 then
-    out=$(awk -F, '{ if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {A[$8]++}}END{for(i in A)print i":",A[i]}' ${filename[1]} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {
+            A[$8]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}' \
+    ${filename[1]} | sort)
     echo "$out"
 elif [[ $isCountries == 1 ]] && [[ $isA == 1 ]]
 then
-    out=$(awk -F, '{ if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {A[$8]++}}END{for(i in A)print i":",A[i]}' <<< ${outA} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{\
+        if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {
+            A[$8]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outA} | sort)
     echo "$out"
 elif [[ $isCountries == 1 ]] && [[ $isB == 1 ]]
 then
-    out=$(awk -F, '{ if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {A[$8]++}}END{for(i in A)print i":",A[i]}' <<< ${outB} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{\
+        if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {
+            A[$8]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outB} | sort)
     echo "$out"
 elif [[ $isCountries == 1 ]] && [[ $isG == 1 ]]
 then
-    out=$(awk -F, '{ if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {A[$8]++}}END{for(i in A)print i":",A[i]}' <<< ${outG} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($8 != "") && ($8 != "CZ") && ($8 != "nakaza_zeme_csu_kod")) {
+            A[$8]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outG} | sort)
     echo "$out"
 fi
 
@@ -783,38 +926,165 @@ fi
 
 if [[ $isDistricts == 1 ]] && [[ $opts == 0 ]]
 then
-    out=$(awk -F, '{ if (($5 != "kraj_nuts_kod") && ($5 != "")) {A[$5]++}}END{for(i in A)print i":",A[i]}' ${filename[1]} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($5 != "kraj_nuts_kod") && ($5 != "")) {
+            A[$5]++
+        }
+    }\
+    END{for(i in A)print i":",A[i]}'\
+     ${filename[1]} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($5 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    ${filename[1]})
+    echo "$out2"
 elif [[ $isDistricts == 1 ]] && [[ $isA == 1 ]]
 then
-    out=$(awk -F, '{ if (($5 != "kraj_nuts_kod") && ($5 != "")) {A[$5]++}}END{for(i in A)print i":",A[i]}' <<< ${outA} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ if (($5 != "kraj_nuts_kod") && ($5 != "")) {
+            A[$5]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outA} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($5 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    <<< ${outA} )
+    echo "$out2"
 elif [[ $isDistricts == 1 ]] && [[ $isB == 1 ]]
 then
-    out=$(awk -F, '{ if (($5 != "kraj_nuts_kod") && ($5 != "")) {A[$5]++}}END{for(i in A)print i":",A[i]}' <<< ${outB} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($5 != "kraj_nuts_kod") && ($5 != "")) {
+            A[$5]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outB} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($5 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    <<< ${outB} )
+    echo "$out2"
 elif [[ $isDistricts == 1 ]] && [[ $isG == 1 ]]
 then
-    out=$(awk -F, '{ if (($5 != "kraj_nuts_kod") && ($5 != "")) {A[$5]++}}END{for(i in A)print i":",A[i]}' <<< ${outG} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($5 != "kraj_nuts_kod") && ($5 != "")) {
+            A[$5]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outG} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($5 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    <<< ${outG} )
+    echo "$out2"
 fi
 
 # [regions]
 
 if [[ $isRegions == 1 ]] && [[ $opts == 0 ]]
 then
-    out=$(awk -F, '{ if (($6 != "okres_lau_kod") && ($6 != "")) {A[$6]++}}END{for(i in A)print i":",A[i]}' ${filename[1]} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($6 != "okres_lau_kod") && ($6 != "")) {
+            A[$6]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     ${filename[1]} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($6 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    ${filename[1]})
+    echo "$out2"
 elif [[ $isRegions == 1 ]] && [[ $isA == 1 ]]
 then
-    out=$(awk -F, '{ if (($6 != "okres_lau_kod") && ($6 != "")) {A[$6]++}}END{for(i in A)print i":",A[i]}' <<< ${outA} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($6 != "okres_lau_kod") && ($6 != "")) {
+            A[$6]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outA} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($6 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    <<< ${outA})
+    echo "$out2"
 elif [[ $isRegions == 1 ]] && [[ $isB == 1 ]]
 then
-    out=$(awk -F, '{ if (($6 != "okres_lau_kod") && ($6 != "")) {A[$6]++}}END{for(i in A)print i":",A[i]}' <<< ${outB} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($6 != "okres_lau_kod") && ($6 != "")) {
+            A[$6]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outB} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($6 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    <<< ${outB})
+    echo "$out2"
 elif [[ $isRegions == 1 ]] && [[ $isG == 1 ]]
 then
-    out=$(awk -F, '{ if (($6 != "okres_lau_kod") && ($6 != "")) {A[$6]++}}END{for(i in A)print i":",A[i]}' <<< ${outG} | sort -t, -k2,2rn)
+    out=$(awk -F, \
+    '{ \
+        if (($6 != "okres_lau_kod") && ($6 != "")) {
+            A[$6]++
+        }
+    } \
+    END{for(i in A)print i":",A[i]}'\
+     <<< ${outG} | sort)
     echo "$out"
+    out2=$(awk -F, \
+    '{ \
+        if ($6 == "") {
+            count++
+        }
+    } \
+    END{ if (count > 0) {print "None:", count}}' \
+    <<< ${outG})
+    echo "$out2"
 fi
